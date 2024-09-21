@@ -3,11 +3,11 @@ import uuid
 import redis
 import logging
 import mimetypes
-from flask import Flask, g, jsonify, render_template, request, send_file, session
+from flask import Flask, g, jsonify, render_template, request, send_file, session, send_from_directory
 from flask_talisman import Talisman
 from fmsuite import filesystem
 from fmsuite import thumbnail
-from config import SHARES, THUMBNAILS, THUMB_SIZE
+from config import SHARES, THUMBNAILS, THUMB_SIZE, ABS_THUMB_PATH
 
 
 def generate_csrf_token():
@@ -40,17 +40,17 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.WARNING)
 
 
-# Content Security Policy for Flask-Talisman
-csp = {"default-src": ["'self'", "blob:", "data:"],
-       "script-src": ["'self'",
-                      "'sha256-2pWe29RAjmUSi77PP/nCW8IcD9XnGs0VJaq+dLPBlzg='" # For Readium
-                     ],
-       "style-src": ["'self'", "blob:", "'unsafe-inline'"]}
-
-talisman = Talisman(app,
-    content_security_policy=csp,
-    content_security_policy_nonce_in=["script-src"]
-)
+## Content Security Policy for Flask-Talisman
+#csp = {"default-src": ["'self'", "blob:", "data:"],
+#       "script-src": ["'self'",
+#                      "'sha256-2pWe29RAjmUSi77PP/nCW8IcD9XnGs0VJaq+dLPBlzg='" # For Readium
+#                     ],
+#       "style-src": ["'self'", "blob:", "'unsafe-inline'"]}
+#
+#talisman = Talisman(app,
+#    content_security_policy=csp,
+#    content_security_policy_nonce_in=["script-src"]
+#)
 
 
 @app.before_first_request
@@ -79,6 +79,7 @@ def _init():
 def index():
     ''' View function for / '''
     dirs, files = filesystem.get_path_contents("/", g.RQ_THUMBS)
+    log.warn("dirs: %s, files: %s", dirs, files)
     return render_template("folder.html",
                            paths=filesystem.get_paths("/", limits=SHARES),
                            dirs=dirs, files=files)
@@ -95,9 +96,16 @@ def explore_path(uid):
     ''' View function for /explore/<uid>/ '''
     path = g.DB.get(uid).decode()
     dirs, files = filesystem.get_path_contents(path, g.RQ_THUMBS)
+    log.warn("dirs: %s, files: %s", dirs, files)
     return render_template("folder.html",
                            paths=filesystem.get_paths(path, limits=SHARES),
                            dirs=dirs, files=files)
+
+
+@app.route('/img/thumbs/<path:path>')
+def serve_thumb(path):
+    """Serve thumbnail files."""
+    return send_from_directory(ABS_THUMB_PATH, path)
 
 
 @app.route("/serve/<uid>/")
@@ -112,6 +120,7 @@ def serve_file(uid):
 def get_file(uid):
     ''' Get (i.e. download) file. '''
     path = g.DB.get(uid).decode()
+    print("path: ", path, "uid: ", uid)
     mimetype = mimetypes.guess_type(path)[0]
     return send_file(path, mimetype=mimetype, as_attachment=True)
 
